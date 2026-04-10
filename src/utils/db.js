@@ -14,7 +14,6 @@ export default async function dbConnect() {
     const db = await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      dbName: "healthbyte", // Optional: Specify your DB name here
     });
 
     isConnected = db.connections[0].readyState;
