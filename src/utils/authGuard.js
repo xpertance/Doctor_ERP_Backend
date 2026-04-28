@@ -1,7 +1,13 @@
 import jwt from 'jsonwebtoken';
 import { ApiResponse } from './apiResponse';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_here';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('[AUTH ERROR] JWT_SECRET is not defined in environment variables.');
+}
+
+
 
 /**
  * Role-Based Access Control (RBAC) Higher-Order Function.
@@ -16,7 +22,10 @@ export function withRoles(allowedRoles, handler) {
     try {
       // 1. Extract Bearer token from Authorization header
       const authHeader = req.headers.get('authorization');
+
+
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
+
         return ApiResponse.error(
           'Missing or invalid authorization header',
           'MISSING_TOKEN',
@@ -27,11 +36,14 @@ export function withRoles(allowedRoles, handler) {
 
       const token = authHeader.split(' ')[1];
 
+
       // 2. Verify token
       let decoded;
       try {
-        decoded = jwt.verify(token, JWT_SECRET);
+        decoded = jwt.verify(token.trim(), JWT_SECRET);
+
       } catch (error) {
+
         return ApiResponse.error(
           'Token verification failed or expired',
           'INVALID_TOKEN',
@@ -53,7 +65,10 @@ export function withRoles(allowedRoles, handler) {
       // Support situations where allowedRoles might be empty/null (meaning just logged in is enough) 
       // or strictly matching the allowed list.
       if (allowedRoles && allowedRoles.length > 0) {
-        if (!allowedRoles.includes(decoded.role)) {
+        const userRole = decoded.role.toLowerCase();
+        const normalizedAllowedRoles = allowedRoles.map(r => r.toLowerCase());
+
+        if (!normalizedAllowedRoles.includes(userRole)) {
           return ApiResponse.error(
             `Access Denied. Required roles: ${allowedRoles.join(', ')}`,
             'FORBIDDEN',
@@ -64,13 +79,10 @@ export function withRoles(allowedRoles, handler) {
       }
 
       // 4. Inject decoded user data into the request object's context
-      // NextRequest objects are read-only in some properties, but we can assign custom props
       req.user = decoded;
 
-      // Proceed to the original handler with an authorized request
-      return await handler(req, context);
     } catch (error) {
-      console.error('RBAC Error:', error);
+      console.error('RBAC Authorization Error:', error);
       return ApiResponse.error(
         'Internal Server Authorization Error',
         'AUTH_ERROR',
@@ -78,5 +90,9 @@ export function withRoles(allowedRoles, handler) {
         500
       );
     }
+
+    // Proceed to the original handler with an authorized request
+    // We call this OUTSIDE the authorization try-catch so we don't mask handler errors
+    return await handler(req, context);
   };
 }

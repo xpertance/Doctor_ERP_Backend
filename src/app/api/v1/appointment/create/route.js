@@ -1,66 +1,55 @@
-import { ApiResponse } from '@/utils/apiResponse';
-import dbConnect from '@/utils/db';
-import Appointment from '@/models/Appointments';
-import { appointmentCreateSchema } from '@/validations/userValidation';
 import { withErrorHandler } from '@/utils/apiHandler';
+import { withRoles } from '@/utils/authGuard';
+import * as appointmentController from '@/controllers/appointmentController';
 
 // POST: /api/v1/appointment/create
 /**
  * @swagger
  * /api/v1/appointment/create:
  *   post:
- *     summary: POST request for /api/v1/appointment/create
+ *     summary: Book a new appointment
+ *     description: Creates a new appointment. Only Admin or Receptionist roles are authorized.
  *     tags: [Appointment]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - patientId
+ *               - doctorId
+ *               - appointmentDate
+ *               - timeSlot
+ *               - reason
+ *             properties:
+ *               patientId:
+ *                 type: string
+ *               doctorId:
+ *                 type: string
+ *               appointmentDate:
+ *                 type: string
+ *                 format: date
+ *               timeSlot:
+ *                 type: string
+ *               reason:
+ *                 type: string
+ *               notes:
+ *                 type: string
  *     responses:
- *       200:
- *         description: Successful response
+ *       201:
+ *         description: Appointment booked successfully
  *       400:
- *         description: Bad Request
- *       500:
- *         description: Internal Server Error
+ *         description: Validation failed or Double booking
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (Role not allowed)
  */
-export const POST = withErrorHandler(async (req) => {
-    await dbConnect();
-    const body = await req.json();
-
-    const parsed = appointmentCreateSchema.safeParse(body);
-    if (!parsed.success) {
-      return ApiResponse.error(
-        'Validation failed',
-        'VALIDATION_ERROR',
-        parsed.error.format(),
-        400
-      );
-    }
-
-    const {
-      patientId,
-      doctorId,
-      doctorName,
-      doctorFees,
-      patientEmail,
-      patientName,
-      patientNote,
-      patientNumber,
-      appointmentDate,
-      time,
-      day,
-    } = parsed.data;
-
-    // Create new appointment
-    const newAppointment = await Appointment.create({
-      patientId,
-      doctorId,
-      doctorName,
-      doctorFees,
-      patientEmail,
-      patientName,
-      patientNote,
-      patientNumber,
-      appointmentDate,
-      time,
-      day,
-    });
-
-    return ApiResponse.success({ appointment: newAppointment }, "Appointment created successfully", 201);
-});
+export const POST = withErrorHandler(
+  withRoles(['admin', 'receptionist'], async (req) => {
+    return await appointmentController.createAppointment(req);
+  })
+);

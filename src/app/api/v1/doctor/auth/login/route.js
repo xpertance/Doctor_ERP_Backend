@@ -3,6 +3,8 @@ import Doctor from "@/models/Doctor";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { ApiResponse } from "@/utils/apiResponse";
+import { generateToken } from "@/utils/generateToken";
+
 
 /**
  * @swagger
@@ -33,11 +35,8 @@ export async function POST(req) {
       return ApiResponse.error("Invalid password", "INVALID_PASSWORD", [], 401);
     }
 
-    const token = jwt.sign(
-      { userId: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = generateToken(user, user.role);
+
 
     return ApiResponse.success({
       token,

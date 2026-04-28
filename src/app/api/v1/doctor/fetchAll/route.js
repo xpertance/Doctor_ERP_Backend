@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/utils/apiResponse';
 import Doctor from '@/models/Doctor';
+import Leave from '@/models/Leave';
 import dbConnect from '@/utils/db';
+
 // GET all doctors
 /**
  * @swagger
@@ -23,9 +25,30 @@ export async function GET() {
 
     const doctors = await Doctor.find(); // Fetch all doctors
 
-    return ApiResponse.success({ doctors });
+    // Check leaves for today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const enrichedDoctors = await Promise.all(
+      doctors.map(async (doc) => {
+        const docObj = doc.toObject();
+        const leaveRecord = await Leave.findOne({
+          doctorId: doc._id,
+          date: today
+        });
+        docObj.isOnLeave = !!leaveRecord;
+        return docObj;
+      })
+    );
+
+    return ApiResponse.success({ doctors: enrichedDoctors });
   } catch (error) {
-    console.error('Error fetching doctors:', error);
-    return ApiResponse.error('Internal Server Error', undefined, [], 500);
+    console.error('❌ Error fetching doctors:', error);
+    return ApiResponse.error(
+      'Internal Server Error', 
+      'FETCH_ALL_ERROR', 
+      error.message, 
+      500
+    );
   }
 }

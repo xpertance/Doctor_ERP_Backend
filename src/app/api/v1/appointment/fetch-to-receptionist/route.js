@@ -1,7 +1,7 @@
 import { ApiResponse } from '@/utils/apiResponse';
 import dbConnect from '@/utils/db';
 import Appointment from '@/models/Appointments';
-import Receptionist from '@/models/Reciptionist';
+import Receptionist from '@/models/Staff';
 import Doctor from '@/models/Doctor';
 
 // POST: /api/v1/appointment/fetchtoreceptinist

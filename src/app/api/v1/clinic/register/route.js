@@ -3,8 +3,9 @@ import dbConnect from '@/utils/db';
 import Clinic from '@/models/Clinic';
 import { clinicRegistrationSchema } from '@/validations/userValidation';
 import { withErrorHandler } from '@/utils/apiHandler';
+import bcrypt from 'bcryptjs';
 
-// GET: /api/v1/clinic/fetch-all-clinics
+// GET: /api/v1/clinic/register (Used for fetching all clinics in this route context)
 /**
  * @swagger
  * /api/v1/clinic/register:
@@ -14,15 +15,10 @@ import { withErrorHandler } from '@/utils/apiHandler';
  *     responses:
  *       200:
  *         description: Successful response
- *       400:
- *         description: Bad Request
- *       500:
- *         description: Internal Server Error
  */
 export const GET = withErrorHandler(async () => {
   await dbConnect();
   const clinics = await Clinic.find().select('-password');
-
   return ApiResponse.success({ clinics }, 'Clinics fetched successfully');
 });
 
@@ -36,10 +32,6 @@ export const GET = withErrorHandler(async () => {
  *     responses:
  *       200:
  *         description: Successful response
- *       400:
- *         description: Bad Request
- *       500:
- *         description: Internal Server Error
  */
 export const POST = withErrorHandler(async (req) => {
   await dbConnect();
@@ -47,6 +39,7 @@ export const POST = withErrorHandler(async (req) => {
 
   const parsed = clinicRegistrationSchema.safeParse(body);
   if (!parsed.success) {
+    console.error('Registration Validation Error:', JSON.stringify(parsed.error.format(), null, 2));
     return ApiResponse.error(
       'Validation failed',
       'VALIDATION_ERROR',
@@ -80,14 +73,19 @@ export const POST = withErrorHandler(async (req) => {
     is24x7 = false,
   } = parsed.data;
 
-  // Cleaned Opening Hours (Only if open & close provided)
+  // Cleaned Opening Hours
   const cleanedOpeningHours = {};
-  for (const [day, time] of Object.entries(openingHours)) {
-    cleanedOpeningHours[day] = {
-      open: time?.open || '',
-      close: time?.close || '',
-    };
+  if (openingHours && typeof openingHours === 'object') {
+    for (const [day, time] of Object.entries(openingHours)) {
+      cleanedOpeningHours[day] = {
+        open: time?.open || '',
+        close: time?.close || '',
+      };
+    }
   }
+
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
 
   const newClinic = await Clinic.create({
     clinicName,
@@ -101,7 +99,7 @@ export const POST = withErrorHandler(async (req) => {
     email,
     phone,
     address,
-    password,
+    password: hashedPassword,
     city,
     state,
     postalCode,
@@ -115,5 +113,8 @@ export const POST = withErrorHandler(async (req) => {
     is24x7,
   });
 
-  return ApiResponse.success({ clinic: newClinic }, 'Clinic registered successfully', 201);
+  const clinicResponse = newClinic.toObject();
+  delete clinicResponse.password;
+
+  return ApiResponse.success({ clinic: clinicResponse }, 'Clinic registered successfully', 201);
 });

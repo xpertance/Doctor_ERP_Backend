@@ -1,73 +1,57 @@
 import { ApiResponse } from '@/utils/apiResponse';
+import { generateToken } from '@/utils/generateToken';
+import { rateLimit } from '@/utils/rateLimit';
+
 import dbConnect from '@/utils/db';
 import Admin from '@/models/Admin';
 import Clinic from '@/models/Clinic';
 import Doctor from '@/models/Doctor';
 import Patient from '@/models/Patient';
-import Receptionist from '@/models/Reciptionist';
+import Receptionist from '@/models/Staff';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { loginSchema } from '@/validations/userValidation';
 import { withErrorHandler } from '@/utils/apiHandler';
+import { ROLES } from '@/constants/roles';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_here';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('[AUTH ERROR] JWT_SECRET is not defined in environment variables.');
+}
 
 /**
  * @swagger
  * /api/v1/auth/onelogin:
  *   post:
  *     summary: Authenticate user and issue JWT
- *     description: This endpoint checks the email and password against all 5 user collections (Admin, Clinic, Doctor, Patient, Receptionist) and returns a signed JWT Token based on their access level.
+ *     description: Unified login for all user types.
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: "admin@practo.com"
- *               password:
- *                 type: string
- *                 format: password
- *                 example: "SecurePass123!"
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     token:
- *                       type: string
- *                       example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
- *                     user:
- *                       type: object
- *       400:
- *         description: Validation failed
- *       401:
- *         description: Invalid password
- *       404:
- *         description: User not found
  */
 export const POST = withErrorHandler(async (req) => {
+  const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
+  const isDev = process.env.NODE_ENV === 'development';
+  const limiter = rateLimit(ip, { limit: isDev ? 100 : 10, windowMs: 15 * 60 * 1000 });
+  
+  if (!limiter.success) {
+    return ApiResponse.error(
+      'Too many login attempts. Please try again later.',
+      'RATE_LIMIT_EXCEEDED',
+      { reset: limiter.reset },
+      429
+    );
+  }
+
   await dbConnect();
-  const body = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch (e) {
+    console.error('[LOGIN ERROR] Failed to parse JSON body');
+    return ApiResponse.error('Invalid JSON body', 'JSON_ERROR', [], 400);
+  }
+  
+
 
   const parsed = loginSchema.safeParse(body);
   if (!parsed.success) {
@@ -78,86 +62,124 @@ export const POST = withErrorHandler(async (req) => {
       400
     );
   }
+
   const { email, password } = parsed.data;
 
   const userModels = [
     {
       model: Admin,
-      hashed: true,
-      type: 'admin',
+      type: ROLES.ADMIN,
       format: (user) => ({
         id: user._id,
-        name: user.name,
+        name: user.name || "Admin",
         email: user.email,
-        role: user.role,
+        role: ROLES.ADMIN,
       }),
     },
     {
       model: Clinic,
-      hashed: false,
-      type: 'clinic',
+      type: ROLES.CLINIC,
       format: (user) => ({
         id: user._id,
         name: user.clinicName,
         email: user.email,
         logo: user.logo,
         status: user.status,
-        role: user.role,
+        role: ROLES.CLINIC,
       }),
     },
     {
       model: Doctor,
-      hashed: true,
-      type: 'doctor',
+      type: ROLES.DOCTOR,
       format: (user) => ({
         id: user._id,
         name: `${user.firstName} ${user.lastName}`,
         email: user.email,
-        role: user.role,
+        role: ROLES.DOCTOR,
       }),
     },
     {
       model: Patient,
-      hashed: false,
-      type: 'patient',
+      type: ROLES.PATIENT,
       format: (user) => ({
         id: user._id,
-        name: user.firstName,
+        name: `${user.firstName} ${user.lastName}`,
         email: user.email,
-        role: user.role,
+        role: ROLES.PATIENT,
       }),
     },
     {
       model: Receptionist,
-      hashed: false,
-      type: 'receptionist',
-      format: (user) => {
-        const { password, ...staffData } = user;
-        return staffData;
-      },
+      type: ROLES.RECEPTIONIST,
+      format: (user) => ({
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        role: ROLES.RECEPTIONIST,
+      }),
     },
   ];
 
-  for (const { model, hashed, format } of userModels) {
-    const user = await model.findOne({ email }).lean();
 
-    if (user) {
-      const isMatch = hashed
-        ? await bcrypt.compare(password, user.password)
-        : password === user.password;
 
-      if (!isMatch) {
-        return ApiResponse.error('Invalid password', 'INVALID_PASSWORD', [], 401);
+  const cleanEmail = email.trim().toLowerCase();
+  let found = null;
+
+
+  for (const modelInfo of userModels) {
+    try {
+      if (!modelInfo.model) {
+        console.error(`[LOGIN ERROR] Model for ${modelInfo.type} is undefined!`);
+        continue;
       }
+      
+      const user = await modelInfo.model.findOne({ 
+        email: { $regex: `^${cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } 
+      }).lean();
 
-      const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+      if (user) {
 
-      return ApiResponse.success({
-        token,
-        user: format(user),
-      }, 'Login successful');
+        found = { user, format: modelInfo.format, type: modelInfo.type };
+        break; // Stop at first match
+      }
+    } catch (err) {
+      console.error(`[LOGIN ERROR] Exception scanning ${modelInfo.type}:`, err.message);
     }
   }
 
-  return ApiResponse.error('User not found', 'USER_NOT_FOUND', [], 404);
+  if (!found) {
+
+    return ApiResponse.error('User not found', 'USER_NOT_FOUND', [], 404);
+  }
+
+  const { user, format, type } = found;
+
+  // Smart password comparison: Detect if stored password is a bcrypt hash
+  const storedPassword = user.password || '';
+  const isBcryptHash = storedPassword.startsWith('$2');
+  const isMatch = isBcryptHash
+    ? await bcrypt.compare(password, storedPassword)
+    : password === storedPassword;
+
+  if (!isMatch) {
+    return ApiResponse.error('Invalid password', 'INVALID_PASSWORD', [], 401);
+  }
+
+  try {
+    const token = generateToken(
+      user, 
+      user.role || type, 
+      type === ROLES.CLINIC ? user._id.toString() : user.clinicId
+    );
+
+
+
+    return ApiResponse.success({
+      token,
+      user: format(user),
+    }, 'Login successful');
+  } catch (err) {
+    console.error('[LOGIN ERROR] Failed to finalize login:', err);
+    return ApiResponse.error(`Finalization error: ${err.message}`, 'FINALIZATION_ERROR', err.stack, 500);
+  }
 });

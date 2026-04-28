@@ -1,9 +1,6 @@
-import { ApiResponse } from '@/utils/apiResponse';
-import dbConnect from '@/utils/db';
-import Patient from '@/models/Patient';
-import bcrypt from 'bcryptjs';
-import { patientRegistrationSchema } from '@/validations/userValidation';
 import { withErrorHandler } from '@/utils/apiHandler';
+import { withRoles } from '@/utils/authGuard';
+import * as patientController from '@/controllers/patientController';
 
 // POST: /api/v1/patient/register
 /**
@@ -11,8 +8,10 @@ import { withErrorHandler } from '@/utils/apiHandler';
  * /api/v1/patient/register:
  *   post:
  *     summary: Register a new patient
- *     description: Creates a new patient account in the system and automatically assigns them the "patient" role.
+ *     description: Creates a new patient account. Only Admin or Receptionist roles are authorized.
  *     tags: [Patient]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -23,7 +22,9 @@ import { withErrorHandler } from '@/utils/apiHandler';
  *               - firstName
  *               - lastName
  *               - email
- *               - phone
+ *               - phoneNumber
+ *               - dateOfBirth
+ *               - gender
  *               - password
  *             properties:
  *               firstName:
@@ -36,7 +37,7 @@ import { withErrorHandler } from '@/utils/apiHandler';
  *                 type: string
  *                 format: email
  *                 example: "johndoe@example.com"
- *               phone:
+ *               phoneNumber:
  *                 type: string
  *                 example: "+1234567890"
  *               dateOfBirth:
@@ -46,68 +47,33 @@ import { withErrorHandler } from '@/utils/apiHandler';
  *               gender:
  *                 type: string
  *                 example: "Male"
- *               bloodType:
+ *               bloodGroup:
  *                 type: string
  *                 example: "O+"
+ *               emergencyContact:
+ *                 type: string
+ *                 example: "+1098765432"
  *               password:
  *                 type: string
  *                 example: "StrongPassword123!"
+ *               address:
+ *                 type: string
+ *               city:
+ *                 type: string
+ *               state:
+ *                 type: string
+ *               zipCode:
+ *                 type: string
  *     responses:
  *       201:
  *         description: Patient registered successfully
  *       400:
- *         description: Validation failed or Duplicate Email
+ *         description: Validation failed or Duplicate Entry
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (Role not allowed)
  */
 export const POST = withErrorHandler(async (req) => {
-  await dbConnect();
-  const body = await req.json();
-
-  const parsed = patientRegistrationSchema.safeParse(body);
-  if (!parsed.success) {
-    return ApiResponse.error(
-      'Validation failed',
-      'VALIDATION_ERROR',
-      parsed.error.format(),
-      400
-    );
-  }
-
-  const {
-    firstName,
-    lastName,
-    email,
-    phone,
-    dateOfBirth,
-    gender,
-    bloodType,
-    password,
-  } = parsed.data;
-
-  // Check for existing patient
-  const existingPatient = await Patient.findOne({ email });
-  if (existingPatient) {
-    return ApiResponse.error("Email already registered", "DUPLICATE_ENTRY", [], 400);
-  }
-
-  // Hash password (consistency with other models)
-  const hashedPassword = await bcrypt.hash(password, 12);
-
-  // Create new patient
-  const newPatient = await Patient.create({
-    firstName,
-    lastName,
-    email,
-    phone,
-    dateOfBirth,
-    gender,
-    bloodType,
-    password: hashedPassword,
-    role: 'patient',
-  });
-
-  // Return success without password
-  const patientData = newPatient.toObject();
-  delete patientData.password;
-
-  return ApiResponse.success({ patient: patientData }, "Patient registered successfully", 201);
+  return await patientController.register(req);
 });

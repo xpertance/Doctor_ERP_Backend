@@ -1,6 +1,6 @@
 import { ApiResponse } from '@/utils/apiResponse';
 import dbConnect from '@/utils/db';
-import Receptionist from '@/models/Reciptionist';
+import Staff from '@/models/Staff';
 
 // DELETE: /api/v1/clinic/delete-receptionist/[id]
 /**

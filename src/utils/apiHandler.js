@@ -13,7 +13,7 @@ export function withErrorHandler(handler) {
     try {
       return await handler(req, context);
     } catch (error) {
-      console.error('GlobalErrorHandler Caught Error:', error);
+      console.error(`[API ERROR] ${req.method} ${req.url} ->`, error);
 
       // Handle Zod validation errors globally if we ever throw them
       if (error.name === 'ZodError') {
@@ -44,11 +44,12 @@ export function withErrorHandler(handler) {
         );
       }
 
-      // Catch-all Default
+      const isDev = process.env.NODE_ENV === 'development';
+      
       return ApiResponse.error(
-        'Internal Server Error',
+        isDev ? `Server Error: ${error.message}` : 'Internal Server Error',
         'SERVER_ERROR',
-        error.message,
+        isDev ? error.stack : [],
         500
       );
     }

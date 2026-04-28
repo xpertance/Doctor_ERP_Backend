@@ -1,11 +1,19 @@
 import { ApiResponse } from "@/utils/apiResponse";
+import { generateToken } from "@/utils/generateToken";
+
 import dbConnect from "@/utils/db";
-import Staff from "@/models/Reciptionist";
+import Staff from "@/models/Staff";
+import Clinic from "@/models/Clinic";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { loginSchema } from '@/validations/userValidation';
 import { withErrorHandler } from '@/utils/apiHandler';
 
-const JWT_SECRET = process.env.JWT_SECRET || "your_default_secret";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('[AUTH ERROR] JWT_SECRET is not defined in environment variables.');
+}
 
 /**
  * @swagger
@@ -16,10 +24,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "your_default_secret";
  *     responses:
  *       200:
  *         description: Successful response
- *       400:
- *         description: Bad Request
- *       500:
- *         description: Internal Server Error
  */
 export const POST = withErrorHandler(async (req) => {
     await dbConnect();
@@ -41,19 +45,32 @@ export const POST = withErrorHandler(async (req) => {
       return ApiResponse.error("Staff not found.", "USER_NOT_FOUND", [], 404);
     }
 
-    // Plain text comparison
-    if (password !== staff.password) {
+    // Support both plain-text (old users) and bcrypt hashed passwords (new users)
+    let isPasswordValid = false;
+
+    // Check if stored password is a bcrypt hash (starts with $2b$ or $2a$)
+    const isBcryptHash = staff.password && staff.password.startsWith('$2');
+
+    if (isBcryptHash) {
+      // New user: use bcrypt comparison
+      isPasswordValid = await bcrypt.compare(password, staff.password);
+    } else {
+      // Old user: plain text comparison (transition period)
+      isPasswordValid = (password === staff.password);
+    }
+
+    if (!isPasswordValid) {
       return ApiResponse.error("Invalid password.", "INVALID_PASSWORD", [], 401);
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: staff._id, email: staff.email, role: staff.role },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
     const { password: _, ...staffData } = staff.toObject();
+
+    if (staffData.clinicId) {
+      const clinicObj = await Clinic.findById(staffData.clinicId);
+      if (clinicObj) {
+        staffData.clinicName = clinicObj.clinicName;
+      }
+    }
 
     return ApiResponse.success({
       token,

@@ -2,7 +2,7 @@
 
 import { ApiResponse } from '@/utils/apiResponse';
 import dbConnect from '@/utils/db';
-import Receptionist from '@/models/Reciptionist';
+import Staff from '@/models/Staff';
 
 // GET: /api/v1/clinic/fetch-receptionist/[clinicId]
 /**
@@ -30,10 +30,10 @@ export async function GET(req, { params }) {
     await dbConnect();
     const { clinicId } = params;
 
-    const staffList = await Receptionist.find({ clinicId });
+    const staffList = await Staff.find({ clinicId });
 
     if (!staffList || staffList.length === 0) {
-      return ApiResponse.error('No staff found for this clinic.', 'NOT_FOUND', [], 404);
+      return ApiResponse.success({ staff: [] }, 'No staff found for this clinic.');
     }
 
     return ApiResponse.success({ staff: staffList }, 'Staff fetched successfully');

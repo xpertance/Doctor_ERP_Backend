@@ -3,7 +3,7 @@ import dbConnect from '@/utils/db';
 import Admin from '@/models/Admin';
 import Clinic from '@/models/Clinic';
 import Patient from '@/models/Patient';
-import Staff from '@/models/Reciptionist';
+import Staff from '@/models/Staff';
 import Doctor from '@/models/Doctor';
 
 /**

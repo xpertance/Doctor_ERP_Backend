@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { NextResponse } from "next/server";
 import { ApiResponse } from "@/utils/apiResponse";
+import { generateToken } from "@/utils/generateToken";
+
 
 export async function OPTIONS() {
   return NextResponse.json({}, { status: 200 });
@@ -40,13 +42,10 @@ export async function POST(req) {
     return
   }
 
-  const token = jwt.sign(
-    { userId: user._id, email: user.email },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+  const token = generateToken(user, user.role);
 
-  const res = ApiResponse.success({
+
+  return ApiResponse.success({
     message: "Login successful",
     token,
     user: {
@@ -56,6 +55,5 @@ export async function POST(req) {
       role: user.role,
     },
   });
-  return
 }
 

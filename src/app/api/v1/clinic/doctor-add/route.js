@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/utils/apiResponse';
 import bcrypt from 'bcryptjs';
-import Doctor from '@/models/Doctor'; // Adjust the path if needed
-import dbConnect from '@/utils/db';   // MongoDB connection utility
+import Doctor from '@/models/Doctor';
+import dbConnect from '@/utils/db';
+import { doctorRegistrationSchema } from '@/validations/userValidation';
+import { withErrorHandler } from '@/utils/apiHandler';
+
 // Handle POST request to create a doctor
 /**
  * @swagger
@@ -18,83 +21,85 @@ import dbConnect from '@/utils/db';   // MongoDB connection utility
  *       500:
  *         description: Internal Server Error
  */
-export async function POST(req) {
-  try {
-    await dbConnect();
+export const POST = withErrorHandler(async (req) => {
+  await dbConnect();
 
-    const body = await req.json();
-    console.log(body);
-    const {
-      firstName,
-      lastName,
-      dateOfBirth,
-      profileImage,
-      gender,
-      email,
-      homeAddress,
-      password,
-      consultantFee,
-      phone,
-      specialty,
-      supSpeciality,
-      identityProof,
-      degreeCertificate,
-      experience,
-      qualifications,
-     licenseNumber,
-      hospital,
-      sessionTime,
-      clinicId,
-      hospitalAddress,
-      hospitalNumber,
-      status,
-      availableDays,
-      availableTime,
-    } = body;
+  const body = await req.json();
+  console.log('Registering doctor payload:', body);
 
-    const existingDoctor = await Doctor.findOne({ email });
-
-    if (existingDoctor) {
-      return ApiResponse.error('Email already exists', 'DUPLICATE_ENTRY', [], 400);
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Create doctor
-    const newDoctor = await Doctor.create({
-      firstName,
-      lastName,
-      dateOfBirth,
-      profileImage,
-      gender,
-      email,
-      homeAddress,
-      consultantFee,
-      sessionTime,
-      phone,
-      specialty,
-      supSpeciality,
-      experience,
-      qualifications,
-      identityProof,
-      status,
-      degreeCertificate,
-      licenseNumber,
-      hospital,
-      password: hashedPassword,
-      clinicId,
-      hospitalAddress,
-      hospitalNumber,
-      available: {
-        days: availableDays,
-        time: availableTime
-      }
-    });
-
-    return ApiResponse.success({ doctor: newDoctor }, 'Doctor created successfully', 201);
-  } catch (error) {
-    console.error('Error creating doctor:', error);
-    return ApiResponse.error('Internal Server Error', 'SERVER_ERROR', error.message, 500);
+  const parsed = doctorRegistrationSchema.safeParse(body);
+  if (!parsed.success) {
+    console.error('Doctor Registration Validation Error:', JSON.stringify(parsed.error.format(), null, 2));
+    return ApiResponse.error(
+      'Validation failed',
+      'VALIDATION_ERROR',
+      parsed.error.format(),
+      400
+    );
   }
-}
+
+  const {
+    firstName,
+    lastName,
+    dateOfBirth,
+    profileImage,
+    gender,
+    email,
+    homeAddress,
+    password,
+    consultantFee,
+    phone,
+    specialty,
+    supSpeciality,
+    identityProof,
+    degreeCertificate,
+    experience,
+    qualifications,
+    licenseNumber,
+    hospital,
+    sessionTime,
+    clinicId,
+    hospitalAddress,
+    hospitalNumber,
+    status,
+    available,
+  } = parsed.data;
+
+  const existingDoctor = await Doctor.findOne({ email });
+  if (existingDoctor) {
+    return ApiResponse.error('Email already exists', 'DUPLICATE_ENTRY', [], 400);
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  // Create doctor
+  const newDoctor = await Doctor.create({
+    firstName,
+    lastName,
+    dateOfBirth,
+    profileImage,
+    gender,
+    email,
+    homeAddress,
+    consultantFee,
+    sessionTime,
+    phone,
+    specialty,
+    supSpeciality,
+    experience,
+    qualifications,
+    identityProof,
+    status,
+    degreeCertificate,
+    licenseNumber,
+    hospital,
+    password: hashedPassword,
+    clinicId,
+    hospitalAddress,
+    hospitalNumber,
+    available,
+  });
+
+  return ApiResponse.success({ doctor: newDoctor }, 'Doctor created successfully', 201);
+});
