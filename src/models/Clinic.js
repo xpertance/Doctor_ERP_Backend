@@ -34,13 +34,14 @@
 
 // export default mongoose.models.Clinic || mongoose.model('Clinic', clinicSchema);
 import mongoose from 'mongoose';
+import { ROLES, ROLE_LIST } from "../constants/roles";
 
 const clinicSchema = new mongoose.Schema({
-  clinicName: { type: String, required: true },
-  clinicType: { type: String, required: true },
+  clinicName: { type: String },
+  clinicType: { type: String },
   description: { type: String },
-  registrationNumber: { type: String, required: true, unique: true },
-  taxId: { type: String, required: true },
+  registrationNumber: { type: String, unique: true, sparse: true },
+  taxId: { type: String },
   specialties: { type: [String], default: [] },
   logo: { type: String },
   website: { type: String },
@@ -53,7 +54,11 @@ const clinicSchema = new mongoose.Schema({
   state: { type: String },
   postalCode: { type: String },
   country: { type: String },
-  role: { type: String, default: 'clinic' },
+  role: { 
+    type: String, 
+    enum: ROLE_LIST,
+    default: ROLES.CLINIC 
+  },
 
 licenseDocument: { type: Object },
 gstDocument: { type: Object }, // URL or filename
